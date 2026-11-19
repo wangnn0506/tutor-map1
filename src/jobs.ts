@@ -12,6 +12,7 @@ export interface Job {
   district: typeof hangzhouDistricts[number]
   landmark: string
   point: Point
+  locationPrecision?: 'district'
   grade: string
   stage: typeof educationStages[number]
   subjects: string[]
@@ -56,6 +57,10 @@ export function parseHourlyPay(minText: string, maxText: string): HourlyPayRange
   if ((min !== undefined && !Number.isFinite(min)) || (max !== undefined && !Number.isFinite(max))) return null
   if (min !== undefined && max !== undefined && min > max) return null
   return {min, max}
+}
+
+export function formatHourlyPay([min, max]: Job['pay']) {
+  return (min === max ? String(min) : min + '–' + max) + ' 元/小时'
 }
 
 export function distanceKm(start: Point, end: Point) {
