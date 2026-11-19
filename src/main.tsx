@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BookOpen, CalendarClock, ChevronDown, Copy, GraduationCap, MapPin, Search, SlidersHorizontal, X } from 'lucide-react'
-import { emptyFilters, jobs, matchJobs, type Filters, type Job } from './jobs'
+import { BookOpen, ChevronDown, Coins, Clock3, Copy, GraduationCap, Headset, MapPin, Search, SlidersHorizontal, X } from 'lucide-react'
+import { distanceKm, emptyFilters, jobs, matchJobs, type Filters, type Job, type Point } from './jobs'
 import { MapPanel } from './MapPanel'
 import type { MapSettings } from './amap'
 import './style.css'
@@ -18,19 +18,20 @@ function readSettings(): MapSettings {
 }
 
 const settings = readSettings()
-const fields: {key: keyof Filters; name: string; options: [string, string][]}[] = [
-  {key: 'grade', name: '年级', options: ['二年级', '三年级', '六年级'].map(value => [value, value])},
-  {key: 'subject', name: '科目', options: ['语文','英语','全科','作业辅导'].map(value => [value, value])},
-  {key: 'minPay', name: '最低时薪', options: ['60', '70', '80', '100'].map(value => [value + ' 元/小时', value])},
-  {key: 'gender', name: '教师性别', options: [['男老师','男老师'], ['女老师','女老师']]},
-  {key: 'district', name: '城区', options: ['西湖区','滨江区','拱墅区','萧山区'].map(value => [value, value])},
+const fields: {key: keyof Filters; name: string; all: string; options: [string, string][]}[] = [
+  {key: 'gender', name: '性别要求', all: '全部性别', options: [['男生', '男老师'], ['女生', '女老师']]},
+  {key: 'occupation', name: '职业要求', all: '全部职业', options: ['普通兼职', '专职教师'].map(value => [value, value])},
+  {key: 'grade', name: '需求年级', all: '全部年级', options: ['学前', '小学', '初中', '高中', '其他'].map(value => [value, value])},
+  {key: 'subject', name: '需求科目', all: '全部科目', options: ['文科', '理科', '技术', '拓展', '艺术', '辅助', '其他'].map(value => [value, value])},
+  {key: 'district', name: '城区', all: '全部城区', options: ['西湖区','滨江区','拱墅区','萧山区'].map(value => [value, value])},
+  {key: 'minPay', name: '最低时薪', all: '不限薪酬', options: ['60', '70', '80', '100'].map(value => [value + ' 元/小时', value])},
 ]
 
-function Modal({title, children, onClose}: {title: string; children: ReactNode; onClose(): void}) {
+function Modal({title, children, onClose, headerAction, className}: {title: string; children: ReactNode; onClose(): void; headerAction?: ReactNode; className?: string}) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { ref.current?.showModal() }, [])
-  return <dialog ref={ref} onCancel={event => { event.preventDefault(); onClose() }} aria-labelledby="dialog-title">
-    <div className="dialog-head"><h2 id="dialog-title">{title}</h2><button className="icon-button" aria-label="关闭" onClick={onClose}><X size={21}/></button></div>
+  return <dialog ref={ref} className={className} onCancel={event => { event.preventDefault(); onClose() }} aria-labelledby="dialog-title">
+    <div className="dialog-head"><h2 id="dialog-title">{title}</h2><div className="dialog-head-actions">{headerAction}<button className="icon-button" aria-label="关闭" onClick={onClose}><X size={21}/></button></div></div>
     {children}
   </dialog>
 }
@@ -64,29 +65,48 @@ function Settings({onClose}: {onClose(): void}) {
   </Modal>
 }
 
-function JobCard({job, onShow}: {job: Job; onShow(): void}) {
-  return <article className="job">
-    <div className="job-top"><h3>{job.title}</h3><div className="pay"><strong>{job.pay.join('–')}</strong><span> 元/小时</span></div></div>
-    <div className="job-tags"><span>{job.district}</span><span>{job.grade}</span>{job.preference && <span className="preference">{job.preference}</span>}</div>
-    <div className="job-meta"><MapPin size={16}/><span>{job.landmark}</span></div>
-    <div className="job-meta"><CalendarClock size={16}/><span>{job.schedule}</span></div>
-    <div className="job-tail"><span>{job.id}</span><button className="text-button" onClick={onShow}>查看要求</button></div>
-  </article>
-}
-
-function JobDetail({job, close, locate}: {job: Job; close(): void; locate(): void}) {
+function useCopyJob(job: Job) {
   const [copyState, setCopyState] = useState('')
   async function copy() {
     try {
       await navigator.clipboard.writeText([
-        job.id, job.title, job.district + ' · ' + job.landmark, job.pay.join('–') + ' 元/小时',
-        job.schedule, job.requirements, job.preference,
+        job.id, job.title, job.district + ' · ' + job.landmark,
+        job.pay.join('–') + ' 元/小时' + (job.flexiblePay ? '，也可自行报价' : ''),
+        job.schedule, job.requirements, job.preference, job.contact,
       ].filter(Boolean).join('\n'))
       setCopyState('已复制岗位信息')
     } catch {
-      setCopyState('自动复制失败，可选中文字手动复制。')
+      setCopyState('复制失败，可选中文字手动复制。')
     }
   }
+  return {copy, copyState}
+}
+
+function JobCard({job, location, onShow}: {job: Job; location: Point | null; onShow(): void}) {
+  const {copy, copyState} = useCopyJob(job)
+  const distance = location ? '约 ' + distanceKm(location, job.point).toFixed(1) + ' 公里' : null
+  return <article className="job">
+    <div className="job-top">
+      <div className="job-identity">
+        <h3>{job.title}</h3>
+        <p>{job.district}{distance && ' · ' + distance}</p>
+      </div>
+      <button className="job-copy" onClick={copy}><Copy size={16}/>复制信息</button>
+    </div>
+    <dl className="job-facts">
+      <dt><Coins/>薪酬</dt><dd className="job-pay">{job.pay.join('–')} 元/小时{job.flexiblePay && <span> · 可议价</span>}</dd>
+      <dt><Clock3/>时间</dt><dd>{job.schedule}</dd>
+      <dt><GraduationCap/>要求</dt><dd>{job.requirements}{job.preference && <span className="preference">{job.preference}</span>}</dd>
+      {job.contact && <><dt><Headset/>客服微信</dt><dd>{job.contact}</dd></>}
+      <dt><MapPin/>地点</dt><dd>{job.landmark}</dd>
+    </dl>
+    <div className="job-tail"><span>{job.id}</span><button className="text-button" onClick={onShow}>岗位详情</button></div>
+    <div className="copy-status" role="status">{copyState}</div>
+  </article>
+}
+
+function JobDetail({job, close, locate}: {job: Job; close(): void; locate(): void}) {
+  const {copy, copyState} = useCopyJob(job)
   return <Modal title={job.title} onClose={close}>
     <dl className="details">
       <dt>岗位编号</dt><dd>{job.id}</dd>
@@ -94,6 +114,7 @@ function JobDetail({job, close, locate}: {job: Job; close(): void; locate(): voi
       <dt>课酬</dt><dd>{job.pay.join('–')} 元/小时{job.flexiblePay ? '，也可自行报价' : ''}</dd>
       <dt>授课时间</dt><dd>{job.schedule}</dd>
       <dt>教师要求</dt><dd>{job.requirements}{job.preference ? ' ' + job.preference + '。' : ''}</dd>
+      {job.contact && <><dt>客服微信</dt><dd>{job.contact}</dd></>}
     </dl>
     <div className="dialog-actions"><button className="secondary" onClick={locate}><MapPin size={17}/>地图定位</button><button className="primary" onClick={copy}><Copy size={17}/>复制岗位</button></div>
     <div className="copy-status" role="status">{copyState}</div>
@@ -102,6 +123,7 @@ function JobDetail({job, close, locate}: {job: Job; close(): void; locate(): voi
 
 function App() {
   const [query, setQuery] = useState('')
+  const [location, setLocation] = useState<Point | null>(null)
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [selected, setSelected] = useState<string[]>([])
   const [visible, setVisible] = useState<string[]>(jobs.map(job => job.id))
@@ -134,13 +156,18 @@ function App() {
     choose([])
   }
 
+  function closeFilters() {
+    setFilterOpen(false)
+    setMobileList(true)
+  }
+
   return <div className="app">
     <header className="topbar">
       <div className="brand"><span className="brand-mark"><GraduationCap size={25}/></span><div>家教地图<span className="brand-subtitle">杭州</span></div></div>
       <span className="demo-badge"><i/>演示岗位</span>
     </header>
     <main className={mobileList ? 'workspace list-open' : 'workspace'}>
-      <MapPanel jobs={matches} selected={selected} onSelect={choose} onVisible={setVisible} focus={focus}
+      <MapPanel jobs={matches} selected={selected} onSelect={choose} onVisible={setVisible} onLocate={setLocation} focus={focus}
         settings={settings} onSettings={() => setMapSettingsOpen(true)}/>
       <section className="sidebar" aria-label="岗位列表">
         <div className="side-head">
@@ -167,19 +194,19 @@ function App() {
           {selected.length > 0 && <div className="selection">已选地图点位<button className="text-button" onClick={() => choose([])}>查看全部点位</button></div>}
         </div>
         <div className="results" ref={list}>
-          {shown.map(job => <JobCard key={job.id} job={job} onShow={() => setDetail(job)}/>)}
+          {shown.map(job => <JobCard key={job.id} job={job} location={location} onShow={() => setDetail(job)}/>)}
           {!shown.length && <div className="empty"><BookOpen size={28}/><strong>{locatedOutside ? '当前地图范围暂无岗位' : '没有找到符合条件的岗位'}</strong><p>{locatedOutside ? '试试缩小地图，或回到杭州全景。' : '试试其他搜索词，或调整筛选。'}</p></div>}
         </div>
       </section>
     </main>
-    {filterOpen && <Modal title="筛选岗位" onClose={() => setFilterOpen(false)}>
+    {filterOpen && <Modal title="筛选条件" onClose={closeFilters} className="filter-dialog"
+      headerAction={<button className="reset-filters" onClick={resetFilters}>重置筛选</button>}>
       <div className="filter-fields">{fields.map(field => <fieldset key={field.key}>
         <legend>{field.name}</legend><div className="choices">
-          {[['全部', ''], ...field.options].map(([label, value]) => <button key={value} aria-pressed={filters[field.key] === value}
+          {[[field.all, ''], ...field.options].map(([label, value]) => <button key={value} aria-pressed={filters[field.key] === value}
             onClick={() => updateFilter(field.key, value)}>{label}</button>)}
         </div>
       </fieldset>)}</div>
-      <div className="dialog-actions"><button className="secondary" onClick={resetFilters}>重置</button><button className="primary" onClick={() => {setFilterOpen(false);setMobileList(true)}}>完成筛选</button></div>
     </Modal>}
     {detail && <JobDetail job={detail} close={() => setDetail(null)} locate={() => {
       setFocus({...detail})

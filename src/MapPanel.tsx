@@ -9,6 +9,7 @@ interface Props {
   selected: string[]
   onSelect(ids: string[]): void
   onVisible(ids: string[]): void
+  onLocate(point: Point): void
   focus: Job | null
   settings: MapSettings
   onSettings(): void
@@ -40,7 +41,7 @@ function constrain(zoom: number) {
   return Math.min(18, Math.max(9, zoom))
 }
 
-export function MapPanel({ jobs, selected, onSelect, onVisible, focus, settings, onSettings }: Props) {
+export function MapPanel({ jobs, selected, onSelect, onVisible, onLocate, focus, settings, onSettings }: Props) {
   const host = useRef<HTMLElement>(null)
   const amapHost = useRef<HTMLDivElement>(null)
   const drag = useRef<{x: number; y: number; center: Point} | null>(null)
@@ -169,6 +170,7 @@ export function MapPanel({ jobs, selected, onSelect, onVisible, focus, settings,
         return
       }
       setLocation(point)
+      onLocate(point)
       moveTo(point, 13)
       onSelect([])
     } catch {

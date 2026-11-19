@@ -12,6 +12,8 @@ export interface Job {
   schedule: string
   requirements: string
   gender: '男老师' | '不限'
+  occupation?: '普通兼职' | '专职教师'
+  contact?: string
   preference?: string
   flexiblePay?: boolean
 }
@@ -49,13 +51,30 @@ export const jobs: Job[] = [
 
 export interface Filters {
   district: string
+  occupation: string
   grade: string
   subject: string
   gender: string
   minPay: string
 }
 
-export const emptyFilters: Filters = { district: '', grade: '', subject: '', gender: '', minPay: '' }
+export const emptyFilters: Filters = { district: '', occupation: '', grade: '', subject: '', gender: '', minPay: '' }
+
+const subjectCategories: Record<string, string[]> = {
+  语文: ['文科'],
+  英语: ['文科'],
+  全科: ['文科', '理科'],
+  作业辅导: ['辅助'],
+}
+
+export function distanceKm(start: Point, end: Point) {
+  const radians = Math.PI / 180
+  const latitudeDelta = (end[1] - start[1]) * radians
+  const longitudeDelta = (end[0] - start[0]) * radians
+  const haversine = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(start[1] * radians) * Math.cos(end[1] * radians) * Math.sin(longitudeDelta / 2) ** 2
+  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(haversine)))
+}
 
 export function matchJobs(query: string, filters: Filters) {
   const terms = query.toLowerCase().trim().split(/\s+/)
@@ -63,8 +82,9 @@ export function matchJobs(query: string, filters: Filters) {
     const searchable = [job.id, job.title, job.district, job.landmark, ...job.subjects, job.requirements].join(' ').toLowerCase()
     return terms.every(term => searchable.includes(term))
       && (!filters.district || job.district === filters.district)
-      && (!filters.grade || job.grade === filters.grade)
-      && (!filters.subject || job.subjects.includes(filters.subject))
+      && (!filters.occupation || job.occupation === filters.occupation)
+      && (!filters.grade || (/[一二三四五六]年级/.test(job.grade) && filters.grade === '小学'))
+      && (!filters.subject || job.subjects.some(subject => subjectCategories[subject]?.includes(filters.subject)))
       && (!filters.gender || job.gender === '不限' || job.gender === filters.gender)
       && job.pay[0] >= Number(filters.minPay)
   })
