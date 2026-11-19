@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BookOpen, ChevronDown, Coins, Clock3, Copy, GraduationCap, Headset, MapPin, Search, SlidersHorizontal, X } from 'lucide-react'
 import { distanceKm, educationStages, emptyFilters, hangzhouDistricts, matchJobs, parseHourlyPay, subjectGroups, type Filters, type Job, type Point } from './jobs'
@@ -7,18 +7,11 @@ import { MapPanel } from './MapPanel'
 import type { MapSettings } from './amap'
 import './style.css'
 
-const configName = 'hangzhou-tutor-map.amap'
-function readSettings(): MapSettings {
-  try {
-    const saved = sessionStorage.getItem(configName)
-    if (saved) return JSON.parse(saved)
-  } catch {
-    // The build-time configuration also works without session storage.
-  }
-  return {key: import.meta.env.VITE_AMAP_KEY || '', serviceHost: import.meta.env.VITE_AMAP_SERVICE_HOST || ''}
+const settings: MapSettings = {
+  key: import.meta.env.VITE_AMAP_KEY || '',
+  serviceHost: import.meta.env.VITE_AMAP_SERVICE_HOST || '',
 }
 
-const settings = readSettings()
 const fields: {key: Exclude<keyof Filters, 'hourlyPay'>; name: string; all: string; options: [string, string][]}[] = [
   {key: 'gender', name: '性别要求', all: '全部性别', options: [['男生', '男老师'], ['女生', '女老师']]},
   {key: 'occupation', name: '职业要求', all: '全部职业', options: ['普通兼职', '专职教师'].map(value => [value, value])},
@@ -34,35 +27,6 @@ function Modal({title, children, onClose, headerAction, className}: {title: stri
     <div className="dialog-head"><h2 id="dialog-title">{title}</h2><div className="dialog-head-actions">{headerAction}<button className="icon-button" aria-label="关闭" onClick={onClose}><X size={21}/></button></div></div>
     {children}
   </dialog>
-}
-
-function Settings({onClose}: {onClose(): void}) {
-  const [error, setError] = useState('')
-  function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const fields = new FormData(event.currentTarget)
-    const key = String(fields.get('key')).trim()
-    const serviceHost = String(fields.get('serviceHost')).trim().replace(/\/$/, '')
-    if (key && !/^https:\/\/[^\s?#]+\/_AMapService$/.test(serviceHost)) {
-      setError('代理地址须以 https:// 开头，以 /_AMapService 结尾。')
-      return
-    }
-    try {
-      sessionStorage.setItem(configName, JSON.stringify({ key, serviceHost }))
-      window.location.reload()
-    } catch {
-      setError('此浏览器无法保存配置。')
-    }
-  }
-  return <Modal title="地图设置" onClose={onClose}>
-    <form onSubmit={save} className="settings-form">
-      <p>填入高德 Web 端（JS API）Key 和已配置的安全代理地址。留空并保存可返回杭州示意图。</p>
-      <label>高德 Web Key<input name="key" defaultValue={settings.key} autoComplete="off"/></label>
-      <label>安全代理地址<input name="serviceHost" defaultValue={settings.serviceHost} placeholder="https://你的域名/_AMapService" autoComplete="off"/></label>
-      {error && <p role="alert">{error}</p>}
-      <button className="primary" type="submit">保存地图配置</button>
-    </form>
-  </Modal>
 }
 
 function useCopyJob(job: Job) {
@@ -84,12 +48,13 @@ function useCopyJob(job: Job) {
 
 function JobCard({job, location, onShow}: {job: Job; location: Point | null; onShow(): void}) {
   const {copy, copyState} = useCopyJob(job)
-  const distance = location ? '约 ' + distanceKm(location, job.point).toFixed(1) + ' 公里' : null
+  const km = location ? distanceKm(location, job.point) : null
+  const distance = km === null ? null : km < 1 ? `${Math.round(km * 1000)} 米` : `${km.toFixed(1)} 公里`
   return <article className="job">
     <div className="job-top">
       <div className="job-identity">
         <h3>{job.title}</h3>
-        <p>{job.district}{distance && ' · ' + distance}</p>
+        {distance && <p>距您约 {distance}（直线）</p>}
       </div>
       <button className="job-copy" onClick={copy}><Copy size={16}/>复制信息</button>
     </div>
@@ -98,7 +63,7 @@ function JobCard({job, location, onShow}: {job: Job; location: Point | null; onS
       <dt><Clock3/>时间</dt><dd>{job.schedule}</dd>
       <dt><GraduationCap/>要求</dt><dd>{job.requirements}{job.preference && <span className="preference">{job.preference}</span>}</dd>
       {job.contact && <><dt><Headset/>客服微信</dt><dd>{job.contact}</dd></>}
-      <dt><MapPin/>地点</dt><dd>{job.landmark}</dd>
+      <dt><MapPin/>地点</dt><dd>{job.district} · {job.landmark}</dd>
     </dl>
     <div className="job-tail"><span>{job.id}</span><button className="text-button" onClick={onShow}>岗位详情</button></div>
     <div className="copy-status" role="status">{copyState}</div>
@@ -131,7 +96,6 @@ function App({jobs}: {jobs: readonly Job[]}) {
   const [detail, setDetail] = useState<Job | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
   const [payInput, setPayInput] = useState({min: '', max: ''})
-  const [mapSettingsOpen, setMapSettingsOpen] = useState(false)
   const [mobileList, setMobileList] = useState(false)
   const touchStart = useRef<number | null>(null)
   const list = useRef<HTMLDivElement>(null)
@@ -183,8 +147,8 @@ function App({jobs}: {jobs: readonly Job[]}) {
       <span className="demo-badge"><i/>演示岗位</span>
     </header>
     <main className={mobileList ? 'workspace list-open' : 'workspace'}>
-      <MapPanel jobs={matches} selected={selected} onSelect={choose} onVisible={setVisible} onLocate={setLocation} focus={focus}
-        settings={settings} onSettings={() => setMapSettingsOpen(true)}/>
+      <MapPanel jobs={matches} selected={selected} onSelect={choose} onVisible={setVisible} location={location} onLocate={setLocation} focus={focus}
+        settings={settings}/>
       <section className="sidebar" aria-label="岗位列表">
         <div className="side-head">
           <button className="sheet-toggle" aria-expanded={mobileList} onClick={() => setMobileList(value => !value)}
@@ -244,7 +208,6 @@ function App({jobs}: {jobs: readonly Job[]}) {
       setMobileList(false)
       setDetail(null)
     }}/>}
-    {mapSettingsOpen && <Settings onClose={() => setMapSettingsOpen(false)}/>}
   </div>
 }
 

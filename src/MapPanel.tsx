@@ -9,10 +9,10 @@ interface Props {
   selected: string[]
   onSelect(ids: string[]): void
   onVisible(ids: string[]): void
+  location: Point | null
   onLocate(point: Point): void
   focus: Job | null
   settings: MapSettings
-  onSettings(): void
 }
 
 interface Marker {
@@ -41,14 +41,13 @@ function constrain(zoom: number) {
   return Math.min(18, Math.max(9, zoom))
 }
 
-export function MapPanel({ jobs, selected, onSelect, onVisible, onLocate, focus, settings, onSettings }: Props) {
+export function MapPanel({ jobs, selected, onSelect, onVisible, location, onLocate, focus, settings }: Props) {
   const host = useRef<HTMLElement>(null)
   const amapHost = useRef<HTMLDivElement>(null)
   const drag = useRef<{x: number; y: number; center: Point} | null>(null)
   const [view, setView] = useState<View>({center: hangzhou, zoom: 11, width: 0, height: 0})
   const [real, setReal] = useState<RealMap | null>(null)
   const [mode, setMode] = useState(settings.key ? 'loading' : 'diagram')
-  const [location, setLocation] = useState<Point | null>(null)
   const [notice, setNotice] = useState('')
   const [locating, setLocating] = useState(false)
 
@@ -157,24 +156,29 @@ export function MapPanel({ jobs, selected, onSelect, onVisible, onLocate, focus,
   const markers = cluster(visible)
 
   async function locate() {
+    if (!window.isSecureContext) {
+      setNotice('请通过 HTTPS 打开网站后使用当前位置。')
+      return
+    }
+    if (!navigator.geolocation) {
+      setNotice('当前浏览器不支持定位。')
+      return
+    }
     if (!real || !window.AMap) {
-      setNotice('配置高德地图后可使用当前位置。')
+      setNotice('高德地图尚未加载，请稍后重试。')
       return
     }
     setLocating(true)
     setNotice('')
     try {
       const point = await locateOnAmap(window.AMap)
-      if (point[0] < 119.75 || point[0] > 120.7 || point[1] < 29.95 || point[1] > 30.55) {
-        setNotice('当前位置超出杭州演示地图范围。')
-        return
-      }
-      setLocation(point)
       onLocate(point)
-      moveTo(point, 13)
-      onSelect([])
-    } catch {
-      setNotice('未获取位置，请检查浏览器定位权限。')
+      const [x, y] = toPixel(point)
+      if (x < 0 || y < 0 || x > view.width || y > view.height) {
+        setNotice('当前位置在当前地图视野外，岗位距离已更新。')
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '暂时无法获取当前位置，请重试。')
     } finally {
       setLocating(false)
     }
@@ -202,9 +206,8 @@ export function MapPanel({ jobs, selected, onSelect, onVisible, onLocate, focus,
         <button aria-label="放大地图" title="放大地图" onClick={() => zoomBy(1)}><Plus size={20}/></button>
         <button aria-label="缩小地图" title="缩小地图" onClick={() => zoomBy(-1)}><Minus size={20}/></button>
       </div>
-      <button aria-label="定位到当前位置" title="定位到当前位置" disabled={locating} onClick={locate}><Crosshair size={19}/></button>
+      <button aria-label="获取当前位置" title="获取当前位置" disabled={locating} onClick={locate}><Crosshair size={19}/></button>
     </div>
     {notice && <div className="map-notice" role="status">{notice}</div>}
-    <div className="map-foot"><span><i/> 岗位数量</span><button onClick={onSettings}>地图设置</button></div>
   </section>
 }

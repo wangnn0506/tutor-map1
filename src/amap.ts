@@ -2,7 +2,6 @@ import type { Point } from './jobs'
 
 interface Pixel { getX(): number; getY(): number }
 interface LngLat { getLng(): number; getLat(): number }
-interface LocationResult { position?: LngLat }
 
 export interface RealMap {
   on(event: string, handler: () => void): void
@@ -16,10 +15,7 @@ export interface RealMap {
 
 interface MapSdk {
   Map: new (element: HTMLElement, options: { center: Point; zoom: number; viewMode: '2D'; zooms: [number, number] }) => RealMap
-  plugin(name: string, onReady: () => void): void
-  Geolocation: new (options: { timeout: number; needAddress: boolean; convert: boolean }) => {
-    getCurrentPosition(callback: (status: string, result: LocationResult) => void): void
-  }
+  convertFrom(point: Point, type: 'gps', callback: (status: string, result?: {locations?: LngLat[]}) => void): void
 }
 
 declare global {
@@ -60,17 +56,21 @@ export function loadAmap(settings: MapSettings) {
 
 export function locateOnAmap(sdk: MapSdk): Promise<Point> {
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error('定位超时')), 12000)
-    sdk.plugin('AMap.Geolocation', () => {
-      new sdk.Geolocation({ timeout: 9000, needAddress: false, convert: true })
-        .getCurrentPosition((status, result) => {
-          clearTimeout(timer)
-          if (status === 'complete' && result.position) {
-            resolve([result.position.getLng(), result.position.getLat()])
-          } else {
-            reject(new Error('未能定位'))
-          }
-        })
-    })
+    navigator.geolocation.getCurrentPosition(({coords}) => {
+      const timer = window.setTimeout(() => reject(new Error('定位坐标转换超时，请重试。')), 8000)
+      sdk.convertFrom([coords.longitude, coords.latitude], 'gps', (status, result) => {
+        clearTimeout(timer)
+        const position = result?.locations?.[0]
+        if (status === 'complete' && position) {
+          resolve([position.getLng(), position.getLat()])
+        } else {
+          reject(new Error('无法将当前位置转换为高德坐标，请重试。'))
+        }
+      })
+    }, error => {
+      const message = error.code === 1 ? '请允许浏览器访问当前位置后重试。'
+        : error.code === 3 ? '定位超时，请重试。' : '暂时无法获取当前位置，请重试。'
+      reject(new Error(message))
+    }, {enableHighAccuracy: true, timeout: 12000, maximumAge: 30000})
   })
 }
