@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BookOpen, ChevronDown, Coins, Clock3, Copy, GraduationCap, Headset, MapPin, Search, SlidersHorizontal, X } from 'lucide-react'
-import { distanceKm, emptyFilters, jobs, matchJobs, type Filters, type Job, type Point } from './jobs'
+import { distanceKm, educationStages, emptyFilters, hangzhouDistricts, matchJobs, parseHourlyPay, subjectGroups, type Filters, type Job, type Point } from './jobs'
+import { demoJobs } from './demo-jobs'
 import { MapPanel } from './MapPanel'
 import type { MapSettings } from './amap'
 import './style.css'
@@ -18,13 +19,12 @@ function readSettings(): MapSettings {
 }
 
 const settings = readSettings()
-const fields: {key: keyof Filters; name: string; all: string; options: [string, string][]}[] = [
+const fields: {key: Exclude<keyof Filters, 'hourlyPay'>; name: string; all: string; options: [string, string][]}[] = [
   {key: 'gender', name: '性别要求', all: '全部性别', options: [['男生', '男老师'], ['女生', '女老师']]},
   {key: 'occupation', name: '职业要求', all: '全部职业', options: ['普通兼职', '专职教师'].map(value => [value, value])},
-  {key: 'grade', name: '需求年级', all: '全部年级', options: ['学前', '小学', '初中', '高中', '其他'].map(value => [value, value])},
-  {key: 'subject', name: '需求科目', all: '全部科目', options: ['文科', '理科', '技术', '拓展', '艺术', '辅助', '其他'].map(value => [value, value])},
-  {key: 'district', name: '城区', all: '全部城区', options: ['西湖区','滨江区','拱墅区','萧山区'].map(value => [value, value])},
-  {key: 'minPay', name: '最低时薪', all: '不限薪酬', options: ['60', '70', '80', '100'].map(value => [value + ' 元/小时', value])},
+  {key: 'grade', name: '需求年级', all: '全部年级', options: educationStages.map(value => [value, value])},
+  {key: 'subject', name: '需求科目', all: '全部科目', options: subjectGroups.map(value => [value, value])},
+  {key: 'district', name: '城区', all: '全部城区', options: hangzhouDistricts.map(value => [value, value])},
 ]
 
 function Modal({title, children, onClose, headerAction, className}: {title: string; children: ReactNode; onClose(): void; headerAction?: ReactNode; className?: string}) {
@@ -121,7 +121,7 @@ function JobDetail({job, close, locate}: {job: Job; close(): void; locate(): voi
   </Modal>
 }
 
-function App() {
+function App({jobs}: {jobs: readonly Job[]}) {
   const [query, setQuery] = useState('')
   const [location, setLocation] = useState<Point | null>(null)
   const [filters, setFilters] = useState<Filters>(emptyFilters)
@@ -130,12 +130,18 @@ function App() {
   const [focus, setFocus] = useState<Job | null>(null)
   const [detail, setDetail] = useState<Job | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [payInput, setPayInput] = useState({min: '', max: ''})
   const [mapSettingsOpen, setMapSettingsOpen] = useState(false)
   const [mobileList, setMobileList] = useState(false)
   const touchStart = useRef<number | null>(null)
   const list = useRef<HTMLDivElement>(null)
-  const matches = matchJobs(query, filters)
-  const filterCount = Object.values(filters).filter(Boolean).length
+  const matches = matchJobs(jobs, query, filters)
+  const {min, max} = filters.hourlyPay
+  const payLabel = min !== undefined && max !== undefined ? `${min}–${max} 元/小时`
+    : min !== undefined ? `≥ ${min} 元/小时`
+    : max !== undefined ? `≤ ${max} 元/小时` : ''
+  const payError = parseHourlyPay(payInput.min, payInput.max) === null
+  const filterCount = fields.filter(field => filters[field.key]).length + Number(Boolean(payLabel))
   const matchingIds = selected.length > 0 ? selected : visible
   const shown = matches.filter(job => matchingIds.includes(job.id))
   const locatedOutside = matches.length > 0 && shown.length === 0
@@ -146,17 +152,27 @@ function App() {
     list.current?.scrollTo({top: 0})
   }
 
-  function updateFilter(key: keyof Filters, value: string) {
+  function updateFilter(key: Exclude<keyof Filters, 'hourlyPay'>, value: string) {
     setFilters(previous => ({...previous, [key]: value}))
     choose([])
   }
 
+  function updatePayInput(input: typeof payInput) {
+    setPayInput(input)
+    const hourlyPay = parseHourlyPay(input.min, input.max)
+    if (!hourlyPay) return
+    setFilters(previous => ({...previous, hourlyPay}))
+    choose([])
+  }
+
   function resetFilters() {
+    setPayInput({min: '', max: ''})
     setFilters(emptyFilters)
     choose([])
   }
 
   function closeFilters() {
+    setPayInput({min: min?.toString() ?? '', max: max?.toString() ?? ''})
     setFilterOpen(false)
     setMobileList(true)
   }
@@ -190,7 +206,7 @@ function App() {
           </div>
           {filterCount > 0 && <div className="applied-list">{fields.filter(field => filters[field.key]).map(field =>
             <button key={field.key} onClick={() => updateFilter(field.key, '')}>{field.options.find(([, value]) => value === filters[field.key])?.[0]}<X size={13}/></button>
-          )}</div>}
+          )}{payLabel && <button onClick={() => updatePayInput({min: '', max: ''})}>{payLabel}<X size={13}/></button>}</div>}
           {selected.length > 0 && <div className="selection">已选地图点位<button className="text-button" onClick={() => choose([])}>查看全部点位</button></div>}
         </div>
         <div className="results" ref={list}>
@@ -206,7 +222,21 @@ function App() {
           {[[field.all, ''], ...field.options].map(([label, value]) => <button key={value} aria-pressed={filters[field.key] === value}
             onClick={() => updateFilter(field.key, value)}>{label}</button>)}
         </div>
-      </fieldset>)}</div>
+      </fieldset>)}
+        <fieldset>
+          <legend>时薪范围（元/小时）</legend>
+          <div className="pay-range">
+            <input aria-label="最低时薪" placeholder="最低时薪" inputMode="decimal" value={payInput.min}
+              aria-invalid={payError} aria-describedby="pay-hint" onChange={event => updatePayInput({...payInput, min: event.target.value})}/>
+            <span aria-hidden="true">—</span>
+            <input aria-label="最高时薪" placeholder="最高时薪" inputMode="decimal" value={payInput.max}
+              aria-invalid={payError} aria-describedby="pay-hint" onChange={event => updatePayInput({...payInput, max: event.target.value})}/>
+          </div>
+          <p id="pay-hint" className={payError ? 'pay-hint invalid' : 'pay-hint'} aria-live="polite">{payError
+            ? '请输入非负金额（最多两位小数），最低时薪不能高于最高时薪。'
+            : '可只填一端。岗位的报价与所填区间有重叠即可匹配。'}</p>
+        </fieldset>
+      </div>
     </Modal>}
     {detail && <JobDetail job={detail} close={() => setDetail(null)} locate={() => {
       setFocus({...detail})
@@ -218,4 +248,4 @@ function App() {
   </div>
 }
 
-createRoot(document.getElementById('root')!).render(<App/>)
+createRoot(document.getElementById('root')!).render(<App jobs={demoJobs}/>)

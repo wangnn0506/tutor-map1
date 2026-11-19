@@ -207,3 +207,9 @@ legend { margin-bottom: 7px; color: #435b4c; font-weight: 600; font-size: 15px; 
   .filter-dialog { padding: 17px 15px 19px; }
   .filter-dialog .filter-fields { gap: 15px; }
 }
+
+.pay-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 9px; color: var(--muted); }
+.pay-range input { width: 100%; min-width: 0; height: 42px; border: 1px solid #d9e5dd; border-radius: 9px; background: #f7faf7; color: #182b24; padding: 0 10px; }
+.pay-range input[aria-invalid="true"] { border-color: #bd665e; }
+.pay-hint { margin-top: 7px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.pay-hint.invalid { color: #983f37; }
