@@ -125,7 +125,7 @@ legend { margin-bottom: 7px; color: #435b4c; font-weight: 600; font-size: 15px; 
   padding: 16px;
   box-shadow: 0 3px 10px #233e2a0a;
 }
-.job-top { align-items: start; gap: 10px; }
+.job-top { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
 .job-identity { min-width: 0; }
 .job-identity h3 { font-size: 17px; line-height: 1.35; }
 .job-identity p { color: var(--muted); font-size: 13px; margin-top: 4px; }
