@@ -1,4 +1,4 @@
-import { educationStages, hangzhouDistricts, parseHourlyPay, subjectGroups, type Job } from './jobs.ts'
+import { educationStages, hangzhouDistricts, occupations, parseHourlyPay, subjectGroups, type Job } from './jobs.ts'
 
 const jobIdPattern = /^[\p{L}\p{N}][\p{L}\p{N}._/–—-]{0,79}$/u
 const numberedLine = /^\s*(?:(?:订单|岗位|任务)\s*(?:编号|单号|ID|号)|编号|单号|ID)\s*:/i
@@ -111,6 +111,8 @@ export function validateDraft(draft: unknown): Job {
   if (!Array.isArray(groups) || !groups.length || groups.some(value => !subjectGroups.some(group => group === value))) {
     throw new Error('请至少选择一个有效的科目分类。')
   }
+  const subjects = field('subjects', '科目', 120, false).split(/[、/,，+]+/).map(value => value.trim()).filter(Boolean)
+  if (!subjects.length) throw new Error('未识别科目。请检查「科目」或「年级科目」一行。')
   const longitude = Number(field('longitude', '经度', 24))
   const latitude = Number(field('latitude', '纬度', 24))
   if (!(longitude >= 118.3 && longitude <= 120.9 && latitude >= 29.15 && latitude <= 30.65)) {
@@ -120,11 +122,11 @@ export function validateDraft(draft: unknown): Job {
   if (pay?.min === undefined || pay.max === undefined || pay.min <= 0) throw new Error('请填写有效的正数时薪区间。')
   const gender = data.gender
   if (gender !== '不限' && gender !== '男老师' && gender !== '女老师') throw new Error('请选择教师性别要求。')
-  const occupation = data.occupation === '普通兼职' || data.occupation === '专职教师' ? data.occupation : undefined
+  const occupation = occupations.find(value => value === data.occupation)
   return {
     id, district, stage, point: [longitude, latitude], subjectGroups: [...new Set(groups)] as Job['subjectGroups'],
     landmark: field('landmark', '公开地标', 120), grade: field('grade', '年级', 40), title: field('title', '标题', 100),
-    subjects: field('subjects', '科目', 120).split(/[、/,，+]+/).map(value => value.trim()).filter(Boolean),
+    subjects,
     pay: [pay.min, pay.max], schedule: field('schedule', '授课时间', 350), requirements: field('requirements', '教师要求', 600, false),
     gender, occupation, preference: field('preference', '教师偏好', 80, false) || undefined,
     contact: field('contact', '公开客服微信', 80, false) || undefined, flexiblePay: data.flexiblePay === true,

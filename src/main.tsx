@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BookOpen, ChevronDown, Coins, Clock3, Copy, GraduationCap, Headset, MapPin, Search, SlidersHorizontal, X } from 'lucide-react'
-import { distanceKm, educationStages, emptyFilters, formatHourlyPay, hangzhouDistricts, matchJobs, parseHourlyPay, subjectGroups, type Filters, type Job, type Point } from './jobs'
+import { distanceKm, educationStages, emptyFilters, formatHourlyPay, hangzhouDistricts, occupations, matchJobs, parseHourlyPay, subjectGroups, type Filters, type Job, type Point } from './jobs'
 import { Admin } from './Admin'
 import { api, appBase } from './api'
 import { MapPanel } from './MapPanel'
@@ -15,7 +15,7 @@ const settings: MapSettings = {
 
 const fields: {key: Exclude<keyof Filters, 'hourlyPay'>; name: string; all: string; options: [string, string][]}[] = [
   {key: 'gender', name: '性别要求', all: '全部性别', options: [['男生', '男老师'], ['女生', '女老师']]},
-  {key: 'occupation', name: '职业要求', all: '全部职业', options: ['普通兼职', '专职教师'].map(value => [value, value])},
+  {key: 'occupation', name: '职业要求', all: '全部职业', options: occupations.map(value => [value, value])},
   {key: 'grade', name: '需求年级', all: '全部年级', options: educationStages.map(value => [value, value])},
   {key: 'subject', name: '需求科目', all: '全部科目', options: subjectGroups.map(value => [value, value])},
   {key: 'district', name: '城区', all: '全部城区', options: hangzhouDistricts.map(value => [value, value])},
@@ -31,7 +31,7 @@ function Modal({title, children, onClose, headerAction, className}: {title: stri
 }
 
 function useCopyJob(job: Job) {
-  const [copyState, setCopyState] = useState('')
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'manual'>('idle')
   const manual = useRef<HTMLTextAreaElement>(null)
   const copyText = [
     '编号：' + job.id, '岗位：' + job.title, '地点：' + job.district + ' · ' + job.landmark,
@@ -45,7 +45,7 @@ function useCopyJob(job: Job) {
     if (navigator.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(copyText)
-        setCopyState('已复制岗位信息')
+        setCopyState('copied')
         return
       } catch { /* Fall back to the selected-text method. */ }
     }
@@ -66,17 +66,18 @@ function useCopyJob(job: Job) {
       field.remove()
       button.focus({preventScroll: true})
     }
-    setCopyState(copied ? '已复制岗位信息' : '请选中下方文字并手动复制。')
+    setCopyState(copied ? 'copied' : 'manual')
   }
 
-  const manualCopy = copyState.startsWith('请') ? <textarea className="manual-copy" ref={manual}
+  const copyMessage = {idle: '', copied: '已复制岗位信息', manual: '请选中下方文字并手动复制。'}[copyState]
+  const manualCopy = copyState === 'manual' ? <textarea className="manual-copy" ref={manual}
     aria-label="可复制的岗位信息" rows={5} readOnly value={copyText} onFocus={event => event.currentTarget.select()}/> : null
   useEffect(() => { manual.current?.focus({preventScroll:true}) }, [copyState])
-  return {copy, copyState, manualCopy}
+  return {copy, copyMessage, manualCopy}
 }
 
 function JobCard({job, location, onShow}: {job: Job; location: Point | null; onShow(): void}) {
-  const {copy, copyState, manualCopy} = useCopyJob(job)
+  const {copy, copyMessage, manualCopy} = useCopyJob(job)
   const km = location && job.locationPrecision !== 'district' ? distanceKm(location, job.point) : null
   const distance = km === null ? null : km < 1 ? `${Math.round(km * 1000)} 米` : `${km.toFixed(1)} 公里`
   return <article className="job">
@@ -95,12 +96,12 @@ function JobCard({job, location, onShow}: {job: Job; location: Point | null; onS
       <dt><MapPin/>地点</dt><dd>{job.district} · {job.landmark}</dd>
     </dl>
     <div className="job-tail"><span>编号 {job.id}</span><button className="text-button" onClick={onShow}>岗位详情</button></div>
-    <div className="copy-status" role="status">{copyState}</div>{manualCopy}
+    <div className="copy-status" role="status">{copyMessage}</div>{manualCopy}
   </article>
 }
 
 function JobDetail({job, close, locate}: {job: Job; close(): void; locate(): void}) {
-  const {copy, copyState, manualCopy} = useCopyJob(job)
+  const {copy, copyMessage, manualCopy} = useCopyJob(job)
   return <Modal title={job.title} onClose={close}>
     <dl className="details">
       <dt>岗位编号</dt><dd>{job.id}</dd>
@@ -111,7 +112,7 @@ function JobDetail({job, close, locate}: {job: Job; close(): void; locate(): voi
       {job.contact && <><dt>客服微信</dt><dd>{job.contact}</dd></>}
     </dl>
     <div className="dialog-actions"><button className="secondary" onClick={locate}><MapPin size={17}/>地图定位</button><button className="primary" onClick={copy}><Copy size={17}/>复制岗位</button></div>
-    <div className="copy-status" role="status">{copyState}</div>{manualCopy}
+    <div className="copy-status" role="status">{copyMessage}</div>{manualCopy}
   </Modal>
 }
 
@@ -120,18 +121,21 @@ function App() {
   const [jobStatus, setJobStatus] = useState('正在加载岗位…')
   useEffect(() => {
     let active = true
-    let newest = 0
+    let refreshing = false
     async function refresh() {
-      const request = ++newest
+      if (refreshing) return
+      refreshing = true
       try {
         const result = await api<{jobs: Job[]}>('jobs')
         if (!Array.isArray(result.jobs)) throw new Error('Invalid jobs response')
-        if (active && request === newest) {
+        if (active) {
           setJobs(result.jobs)
           setJobStatus('')
         }
       } catch {
-        if (active && request === newest) setJobStatus('岗位暂时无法刷新，请稍后重试。')
+        if (active) setJobStatus('岗位暂时无法刷新，请稍后重试。')
+      } finally {
+        refreshing = false
       }
     }
     void refresh()

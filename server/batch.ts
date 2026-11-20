@@ -14,7 +14,6 @@ export function prepareBatchJob(announcement: string): Job {
   const district = hangzhouDistricts.find(value => value === draft.district)
   if (!district) throw new Error('未识别杭州城区。')
   if (!draft.grade) throw new Error('未识别年级。请检查「年级」或「年级科目」一行。')
-  if (!draft.subjects) throw new Error('未识别科目。请检查「科目」或「年级科目」一行。')
   const point = districtPoints[district]
   return {
     ...validateDraft({

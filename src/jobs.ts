@@ -4,6 +4,7 @@ export const hangzhouDistricts = [
   '上城区', '拱墅区', '西湖区', '滨江区', '萧山区',
   '余杭区', '临平区', '钱塘区', '富阳区', '临安区',
 ] as const
+export const occupations = ['普通兼职', '专职教师'] as const
 export const educationStages = ['小学', '初中', '高中', '其他'] as const
 export const subjectGroups = ['文科', '理科', '其他'] as const
 
@@ -22,7 +23,7 @@ export interface Job {
   schedule: string
   requirements: string
   gender: '男老师' | '女老师' | '不限'
-  occupation?: '普通兼职' | '专职教师'
+  occupation?: typeof occupations[number]
   contact?: string
   preference?: string
   flexiblePay?: boolean
